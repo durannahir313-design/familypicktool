@@ -57,11 +57,36 @@ function Run($url,$head=0,$post=0,$proxy=0){
     $ch=curl_init();curl_setopt($ch,CURLOPT_URL,$url);
     curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);curl_setopt($ch,CURLOPT_FOLLOWLOCATION,true);
     curl_setopt($ch,CURLOPT_SSL_VERIFYPEER,false);curl_setopt($ch,CURLOPT_SSL_VERIFYHOST,false);
-    curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,30);
+    curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,30);curl_setopt($ch,CURLOPT_TIMEOUT,45);
     curl_setopt($ch,CURLOPT_COOKIEJAR,$cookieFile);curl_setopt($ch,CURLOPT_COOKIEFILE,$cookieFile);
+    curl_setopt($ch,CURLOPT_ENCODING,'');
     if($proxy){curl_setopt($ch,CURLOPT_HTTPPROXYTUNNEL,true);curl_setopt($ch,CURLOPT_PROXY,$proxy);}
     if($post){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,$post);}
-    if($head&&is_array($head)){curl_setopt($ch,CURLOPT_HTTPHEADER,$head);}
+    // headers por defecto tipo navegador real
+    if(!$head||!is_array($head)){
+        $ua = file_exists("$folder/user_Agent")?trim(file_get_contents("$folder/user_Agent")):DEFAULT_UA;
+        $head = [
+            "User-Agent: $ua",
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language: en-US,en;q=0.9,es;q=0.8",
+            "Connection: keep-alive",
+            "Upgrade-Insecure-Requests: 1",
+            "Sec-Fetch-Dest: document",
+            "Sec-Fetch-Mode: navigate",
+            "Sec-Fetch-Site: none"
+        ];
+    }
+    
+    // Inyectar cookies manuales si existen
+    $manualCookieFile = "$folder/cf_cookie.txt";
+    if(file_exists($manualCookieFile)){
+        $mc = trim(@file_get_contents($manualCookieFile));
+        if($mc!==''){
+            if(!$head||!is_array($head))$head=[];
+            $head[] = "Cookie: ".$mc;
+        }
+    }
+    curl_setopt($ch,CURLOPT_HTTPHEADER,$head);
     curl_setopt($ch,CURLOPT_HEADER,true);$r=curl_exec($ch);
     if(!$r)return false;$hs=curl_getinfo($ch,CURLINFO_HEADER_SIZE);
     $body=substr($r,$hs);curl_close($ch);return $body;
@@ -72,11 +97,25 @@ function Run1($url,$head=0,$post=0,$proxy=0){
     $ch=curl_init();curl_setopt($ch,CURLOPT_URL,$url);
     curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);curl_setopt($ch,CURLOPT_FOLLOWLOCATION,true);
     curl_setopt($ch,CURLOPT_SSL_VERIFYPEER,false);curl_setopt($ch,CURLOPT_SSL_VERIFYHOST,false);
-    curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,30);
+    curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,30);curl_setopt($ch,CURLOPT_TIMEOUT,45);
     curl_setopt($ch,CURLOPT_COOKIEJAR,$cookieFile);curl_setopt($ch,CURLOPT_COOKIEFILE,$cookieFile);
+    curl_setopt($ch,CURLOPT_ENCODING,'');
     if($proxy){curl_setopt($ch,CURLOPT_HTTPPROXYTUNNEL,true);curl_setopt($ch,CURLOPT_PROXY,$proxy);}
     if($post){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,$post);}
-    if($head&&is_array($head)){curl_setopt($ch,CURLOPT_HTTPHEADER,$head);}
+    if(!$head||!is_array($head)){
+        $ua = file_exists("$folder/user_Agent")?trim(file_get_contents("$folder/user_Agent")):DEFAULT_UA;
+        $head = ["User-Agent: $ua","Accept: */*","Accept-Language: en-US,en;q=0.9"];
+    }
+    
+    $manualCookieFile = "$folder/cf_cookie.txt";
+    if(file_exists($manualCookieFile)){
+        $mc = trim(@file_get_contents($manualCookieFile));
+        if($mc!==''){
+            if(!$head||!is_array($head))$head=[];
+            $head[] = "Cookie: ".$mc;
+        }
+    }
+    curl_setopt($ch,CURLOPT_HTTPHEADER,$head);
     curl_setopt($ch,CURLOPT_HEADER,true);$r=curl_exec($ch);
     if(!$r)return false;$info=curl_getinfo($ch);$hs=curl_getinfo($ch,CURLINFO_HEADER_SIZE);
     $header=substr($r,0,$hs);$body=substr($r,$hs);curl_close($ch);
@@ -391,20 +430,23 @@ function IconCaptchaBypass($html,$host,$cookieStr,$ua){
 // =================== CAPTCHA VIA API ===================
 function captchaSolve($url,$sitekey,$method){
     global $API_HOST,$API_KEY;
-    $capUrl="http://{$API_HOST}/in.php?key={$API_KEY}&method={$method}&sitekey={$sitekey}&pageurl=".urlencode($url);
-    $res=Run($capUrl);
-    if(!$res)return false;
+    $scheme = (strpos($API_HOST,'http')===0)?'':'https://';
+    $capUrl="{$scheme}{$API_HOST}/in.php?key={$API_KEY}&method={$method}&sitekey={$sitekey}&pageurl=".urlencode($url);
+    $res=Run($capUrl,["User-Agent: ".DEFAULT_UA,"Accept: */*"]);
+    if(!$res){echo C_RED." [!] API sin respuesta ($API_HOST)
+".C_RESET;return false;}
     $parts=explode('OK|',$res);
-    if(count($parts)<2){echo C_RED." ERROR: ".$res.C_RESET.NL;return false;}
+    if(count($parts)<2){echo C_RED." ERROR API: ".$res.C_RESET.NL;return false;}
     $task=$parts[1];animation("Captcha creado [$task]");
     $max=100;$i=0;
     while($i<$max){
-        $check="http://{$API_HOST}/res.php?key={$API_KEY}&action=get&id={$task}";
-        $res=Run($check);if(!$res){$i++;sleep(3);continue;}
+        $check="{$scheme}{$API_HOST}/res.php?key={$API_KEY}&action=get&id={$task}";
+        $res=Run($check,["User-Agent: ".DEFAULT_UA]);if(!$res){$i++;sleep(3);continue;}
         $rp=explode('OK|',$res);
         if(count($rp)>1){animation("Captcha resuelto en {$i} intentos");return $rp[1];}
         if(strpos($res,'ERROR')!==false){echo C_RED." ERROR: {$res}".C_RESET.NL;return false;}
-        echo"\r".C_YELLOW." Resolviendo [{$i}/{$max}]".C_RESET;$i++;sleep(3);}
+        echo"
+".C_YELLOW." Resolviendo [{$i}/{$max}]".C_RESET;$i++;sleep(3);}
     return false;
 }
 
@@ -611,16 +653,27 @@ function usdpickLogin($site){
     $csrfUrl="https://{$host}/api/auth/csrf";
     $csrfH=usdpickHeaders($host,$ua);
     $csrfResp=Run1($csrfUrl,$csrfH);
-    if(!$csrfResp){echo C_RED."[!] UsdPick: Error obteniendo CSRF.\n".C_RESET;sleep(3);return usdpickLogin($site);}
+    if(!$csrfResp){echo C_RED."[!] UsdPick: Error obteniendo CSRF.
+".C_RESET;sleep(3);return usdpickLogin($site);}
+    // DETECTAR BLOQUEO CLOUDFLARE
+    if(strpos($csrfResp['body'],'<!DOCTYPE')!==false || strlen($csrfResp['body'])>100000){
+        echo C_RED."[!] Cloudflare bloqueo detectado (HTML en vez de JSON).
+".C_RESET;
+        echo C_YELLOW."    -> Borra cookie.txt, usa misma IP que tu PC, o espera 5 min.
+".C_RESET;
+        sleep(5);return false;
+    }
     $csrfData=safe_json_decode($csrfResp['body']);
     $csrfToken=$csrfData['csrfToken']??'';
-    if(!$csrfToken){echo C_YELLOW."[!] UsdPick: Sin CSRF token, intentando sin el...\n".C_RESET;$csrfToken='';}
+    if(!$csrfToken){echo C_YELLOW."[!] UsdPick: Sin CSRF token, intentando sin el...
+".C_RESET;$csrfToken='';}
     else{echo C_GREEN." + CSRF token: ".substr($csrfToken,0,12)."...".NL;}
 
-    // 2) Resolver Turnstile captcha para login
+    // 2) Resolver Turnstile captcha para login - USAR SITEKEY FIJO, NO PARSEAR HTML
     echo C_CYAN."[*] UsdPick: Resolviendo captcha para login...".NL;
     $cap=captchaSolve("https://{$host}/login",USDPICK_TURNSTILE_SITEKEY,"turnstile");
-    if(!$cap){echo C_RED."[!] UsdPick: Fallo captcha en login.\n".C_RESET;sleep(3);return usdpickLogin($site);}
+    if(!$cap){echo C_RED."[!] UsdPick: Fallo captcha en login.
+".C_RESET;sleep(3);return usdpickLogin($site);}
 
     // Formato del captcha_token: "turnstile:RESPONSE"
     $captchaToken="turnstile:".$cap;
@@ -634,7 +687,8 @@ function usdpickLogin($site){
     $h=usdpickHeaders($host,$ua);
     $h[]="Referer: https://{$host}/login";
     $loginResp=Run1($loginUrl,$h,$postData);
-    if(!$loginResp){echo C_RED."[!] UsdPick: Error en login (sin respuesta).\n".C_RESET;sleep(3);return usdpickLogin($site);}
+    if(!$loginResp){echo C_RED."[!] UsdPick: Error en login (sin respuesta).
+".C_RESET;sleep(3);return usdpickLogin($site);}
 
     $body=$loginResp['body'];
     $httpCode=$loginResp['info']['http_code']??0;
@@ -644,7 +698,8 @@ function usdpickLogin($site){
     sleep(2);
     $h2=usdpickHeadersGet($host,$ua);
     $sessionResp=Run("https://{$host}/api/auth/session",$h2);
-    if(!$sessionResp){echo C_RED."[!] UsdPick: Error verificando sesion.\n".C_RESET;return false;}
+    if(!$sessionResp){echo C_RED."[!] UsdPick: Error verificando sesion.
+".C_RESET;return false;}
     $sessionData=safe_json_decode($sessionResp);
 
     if($sessionData&&isset($sessionData['user'])){
@@ -660,7 +715,8 @@ function usdpickLogin($site){
     if(strpos($body,'OAuthAccountNotLinked')!==false)$errorMsg='Email ya vinculado con Google';
     if(strpos($body,'CredentialsSignin')!==false)$errorMsg='Email o password incorrectos';
 
-    echo C_RED."[!] UsdPick Login fallo: {$errorMsg}\n".C_RESET;
+    echo C_RED."[!] UsdPick Login fallo: {$errorMsg}
+".C_RESET;
     echo C_DIM."     [Login Debug] Response: ".substr(strip_tags($body),0,300).C_RESET.NL;
     if(stripos($errorMsg,'incorrectos')!==false||stripos($errorMsg,'CredentialsSignin')!==false){
         unlinkData($host,'email');unlinkData($host,'pass');saveData($host,'pass');saveData($host,'email');
@@ -859,6 +915,14 @@ function loadApi(){
 function setupSite($site){
     $host=$site['host'];
     $fields=['user_Agent','email','pass'];
+    // Preguntar cookies opcionales para nuevos usuarios
+    $cfFile = "$base/cf_cookie.txt";
+    if(!file_exists($cfFile)){
+        echo C_YELLOW."[?] UsdPick ahora pide Cloudflare. Si tenes bloqueo, pega tus cookies del navegador (opcional).".NL;
+        echo C_DIM."    Deja vacio y Enter para omitir. Formato: cf_clearance=xxx; __cf_bm=yyy".C_RESET.NL;
+        $cf = win_readline(C_CYAN."  Cookies: ".C_RESET);
+        if(trim($cf)!==''){file_put_contents($cfFile,trim($cf));echo C_GREEN."  + Cookies guardadas.".NL;}
+    }
     $base=__DIR__."/configs/{$host}-config";
     if(!is_dir($base))mkdir($base,0777,true);
     $needsSetup=false;
