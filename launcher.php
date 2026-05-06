@@ -888,7 +888,8 @@ function usdpickFaucet($site){
 // =================== API SELECTION ===================
 function selectApi(){
     global $API_TYPE,$API_HOST,$API_KEY;
-    clear();echo NL;
+    clear();
+echo "\033[1;32m[LAUNCHER v3.1-cookies]\033[0m\n";echo NL;
     echo C_CYAN.str_repeat("=",52).C_RESET.NL;
     echo C_CYAN."|".C_WHITE."  Selecciona Proveedor de Captcha".C_CYAN."|".C_RESET.NL;
     echo C_CYAN.str_repeat("=",52).C_RESET.NL.NL;
@@ -915,6 +916,7 @@ function loadApi(){
 function setupSite($site){
     $host=$site['host'];
     $fields=['user_Agent','email','pass'];
+    // base ya creado arriba
     // Preguntar cookies opcionales para nuevos usuarios
     $cfFile = "$base/cf_cookie.txt";
     if(!file_exists($cfFile)){
@@ -947,6 +949,7 @@ $CLAIM_COUNT = 0;
 if(!is_dir(__DIR__."/configs"))mkdir(__DIR__."/configs",0777,true);
 
 clear();
+echo "\033[1;32m[LAUNCHER v3.1-cookies]\033[0m\n";
 
 // LICENSE GATE
 if(!licenseGate())exit(C_RED."\n[!] Bot bloqueado. Licencia no valida.\n".C_RESET);
